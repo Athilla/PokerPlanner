@@ -113,6 +113,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on('close', async () => {
       const client = clients.get(ws);
       if (client?.sessionId) {
+        // Check if it's really a disconnection or just a refresh
+        // For a refresh, we don't want to mark the host as fully disconnected right away
+        // We'll store the host/client state temporarily to allow for reconnection
+        const sessionClients = Array.from(clients.values()).filter(c => 
+          c.sessionId === client.sessionId && c !== client);
+        
         if (client.participantId) {
           // Regular participant disconnection
           await storage.updateParticipantConnection(client.participantId, false);
@@ -121,11 +127,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             participantId: client.participantId
           });
         } else if (client.isHost) {
-          // Host disconnection
-          broadcastToSession(client.sessionId, {
-            type: 'host_disconnected',
-          });
-          console.log(`Host disconnected from session ${client.sessionId}`);
+          console.log(`Host disconnected from session ${client.sessionId} - waiting to see if they reconnect`);
+          
+          // Store the host state temporarily in case of reconnection
+          const hostSession = client.sessionId;
+          const hostUserId = client.userId;
+          
+          // Wait a short time to see if the host reconnects (e.g., during a page refresh)
+          setTimeout(() => {
+            // Check if the host has reconnected
+            const hostReconnected = Array.from(clients.values()).some(c => 
+              c.sessionId === hostSession && c.isHost && c.userId === hostUserId);
+            
+            if (!hostReconnected) {
+              // Host has not reconnected within the grace period, broadcast disconnection
+              broadcastToSession(hostSession, {
+                type: 'host_disconnected',
+              });
+              console.log(`Host fully disconnected from session ${hostSession}`);
+            }
+          }, 5000); // 5-second grace period
         }
       }
       clients.delete(ws);
@@ -605,18 +626,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   
   function sendToClient(client: WSClient, data: any) {
-    if (client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(JSON.stringify(data));
+    try {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(JSON.stringify(data));
+      } else {
+        console.log(`Cannot send message to client with readyState ${client.ws.readyState}: ${data.type}`);
+      }
+    } catch (error) {
+      console.error('Error sending message to client:', error);
     }
   }
   
   function broadcastToSession(sessionId: string, data: any, excludeClients: WebSocket[] = []) {
-    // Use Array.from to avoid iterator issues
-    const entries = Array.from(clients.entries());
-    for (const [ws, client] of entries) {
-      if (client.sessionId === sessionId && !excludeClients.includes(ws) && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(data));
+    try {
+      // Use Array.from to avoid iterator issues
+      const entries = Array.from(clients.entries());
+      let sentCount = 0;
+      
+      for (const [ws, client] of entries) {
+        if (client.sessionId === sessionId && !excludeClients.includes(ws)) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(data));
+            sentCount++;
+          } else {
+            console.log(`Cannot broadcast to client with readyState ${ws.readyState} in session ${sessionId}`);
+          }
+        }
       }
+      
+      if (sentCount > 0) {
+        console.log(`Broadcasted ${data.type} message to ${sentCount} clients in session ${sessionId}`);
+      } else if (entries.filter(([_, c]) => c.sessionId === sessionId).length > 0) {
+        console.log(`Warning: No clients in ready state to receive broadcast in session ${sessionId}`);
+      }
+    } catch (error) {
+      console.error('Error broadcasting to session:', error);
     }
   }
   

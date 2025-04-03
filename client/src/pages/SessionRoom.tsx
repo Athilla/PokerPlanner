@@ -4,7 +4,7 @@ import { useParams, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/context/AuthContext";
 import { useWebSocket } from "@/context/WebSocketContext";
-import { closeWebSocketConnection, hostJoinSession } from "@/lib/websocket";
+import { closeWebSocketConnection, hostJoinSession, getWebSocket } from "@/lib/websocket";
 import { getSessionLink, copyToClipboard } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/layout/Navbar";
@@ -92,16 +92,13 @@ export default function SessionRoom() {
       return;
     }
     
-    // Wait a moment to ensure WebSocket is connecting or ready
-    setTimeout(() => {
+    // Create a function to handle WebSocket connection setup
+    const setupSessionConnection = () => {
       if (isHost) {
         if (currentUser && token) {
           console.log("Joining as authenticated host");
-          // Join as host and save host status
+          // Join as host - credentials will be saved in the hostJoinSession function
           hostJoinSession(sessionId, currentUser.id, token);
-          localStorage.setItem(`host_status_${sessionId}`, "true");
-          localStorage.setItem(`host_userId_${sessionId}`, currentUser.id.toString());
-          localStorage.setItem(`host_token_${sessionId}`, token);
         } else if (storedIsHost) {
           console.log("Reconnecting as stored host");
           // Reconnect with stored host status after refresh
@@ -126,10 +123,34 @@ export default function SessionRoom() {
         console.log("Not host or participant, redirecting to join page");
         navigate(`/join/${sessionId}`);
       }
-    }, 300); // Small delay to ensure WebSocket is connecting
+    };
     
-    // Cleanup
+    // Add a listener for WebSocket connection
+    const handleSocketOpen = () => {
+      console.log("WebSocket connected, setting up session");
+      setupSessionConnection();
+    };
+    
+    // Get the current WebSocket state from the context
+    const ws = getWebSocket();
+    
+    if (ws.readyState === WebSocket.OPEN) {
+      // If WebSocket is already open, set up the session immediately
+      console.log("WebSocket already open, setting up session immediately");
+      setupSessionConnection();
+    } else if (ws.readyState === WebSocket.CONNECTING) {
+      // If WebSocket is connecting, wait for it to open
+      console.log("WebSocket is connecting, waiting for open event");
+      ws.addEventListener('open', handleSocketOpen);
+    } else {
+      // Otherwise, wait a bit and try again
+      console.log("WebSocket in unexpected state, delaying setup");
+      setTimeout(setupSessionConnection, 500);
+    }
+    
+    // Clean up event listener and WebSocket connection
     return () => {
+      ws.removeEventListener('open', handleSocketOpen);
       closeWebSocketConnection();
     };
   }, [sessionId, isHost, currentUser, token, participantId, storedSessionId]);

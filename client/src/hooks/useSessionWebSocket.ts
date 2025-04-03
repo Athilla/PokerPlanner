@@ -4,19 +4,55 @@ import { useWebSocket } from "@/context/WebSocketContext";
 import { safeJSONParse } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
+// Define needed types for better code quality
+interface Participant {
+  id: string;
+  alias: string;
+  sessionId: string;
+  role: string;
+  userId?: number;
+  isConnected: boolean;
+}
+
+interface UserStory {
+  id: number;
+  title: string;
+  description: string | null;
+  sessionId: string;
+  isActive: boolean;
+  isCompleted: boolean;
+  finalEstimate: number | null;
+  order: number;
+}
+
+interface Vote {
+  id: number;
+  participantId: string;
+  userStoryId: number;
+  value: number;
+}
+
+interface Session {
+  id: string;
+  name: string;
+  hostId: number;
+  scale: string;
+  notificationsEnabled: boolean;
+}
+
 interface UseSessionWebSocketParams {
   sessionId: string | undefined;
-  setSession: (session: any) => void;
-  setUserStories: (stories: any[]) => void;
-  setParticipants: (participants: any[]) => void;
-  setActiveStory: (story: any | null) => void;
-  setCompletedStories: (stories: any[]) => void;
+  setSession: (session: Session) => void;
+  setUserStories: (stories: UserStory[]) => void;
+  setParticipants: (participants: Participant[]) => void;
+  setActiveStory: (story: UserStory | null) => void;
+  setCompletedStories: (stories: UserStory[]) => void;
   setVotingScale: (scale: number[]) => void;
-  setVotes: (votes: any[]) => void;
+  setVotes: (votes: Vote[]) => void;
   setVotesRevealed: (revealed: boolean) => void;
   setFinalEstimate: (estimate: number | null) => void;
-  setCompletedVotes: (votes: Record<number, any[]>) => void;
-  setParticipantsMap: (map: Record<string, any>) => void;
+  setCompletedVotes: (votes: Record<number, Vote[]>) => void;
+  setParticipantsMap: (map: Record<string, Participant>) => void;
   isHost: boolean;
 }
 
@@ -126,8 +162,8 @@ export default function useSessionWebSocket({
     
     // Handler for participant joined event
     const handleParticipantJoined = (data: any) => {
-      setParticipants(prev => {
-        const existingIndex = prev.findIndex(p => p.id === data.participant.id);
+      setParticipants((prev: Participant[]) => {
+        const existingIndex = prev.findIndex((p: Participant) => p.id === data.participant.id);
         if (existingIndex >= 0) {
           // Update existing participant
           const updated = [...prev];
@@ -146,8 +182,8 @@ export default function useSessionWebSocket({
     
     // Handler for participant disconnected event
     const handleParticipantDisconnected = (data: any) => {
-      setParticipants(prev => 
-        prev.map(p => p.id === data.participantId ? { ...p, isConnected: false } : p)
+      setParticipants((prev: Participant[]) => 
+        prev.map((p: Participant) => p.id === data.participantId ? { ...p, isConnected: false } : p)
       );
     };
     

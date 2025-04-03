@@ -132,7 +132,13 @@ export function joinSession(sessionId: string, participantId: string): void {
 
 // Join a session as a host
 export function hostJoinSession(sessionId: string, userId: number, token: string): void {
+  console.log(`Host joining session: ${sessionId} with userId: ${userId}`);
   sendMessage('host_join_session', { sessionId, userId, token });
+  
+  // Save host status immediately for resilience
+  localStorage.setItem(`host_status_${sessionId}`, "true");
+  localStorage.setItem(`host_userId_${sessionId}`, userId.toString());
+  localStorage.setItem(`host_token_${sessionId}`, token);
 }
 
 // Submit a vote
