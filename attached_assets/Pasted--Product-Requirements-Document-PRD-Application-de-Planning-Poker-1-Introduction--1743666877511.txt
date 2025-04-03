@@ -1,0 +1,177 @@
+
+# Product Requirements Document (PRD) - Application de Planning Poker
+
+## 1. Introduction
+
+### 1.1 Objectif
+L'application de Planning Poker est une plateforme web permettant à des équipes agiles d'estimer collaborativement la complexité ou l'effort des User Stories (US) en temps réel. Un hôte authentifié crée et gère des sessions, tandis que des participants anonymes rejoignent via un lien pour voter sur une échelle définie.
+
+### 1.2 Contexte
+Les équipes agiles, notamment celles utilisant Scrum, ont besoin d'outils simples et efficaces pour faciliter les sessions de Planning Poker à distance. Cette application répond à ce besoin avec une interface intuitive, un design élégant et une synchronisation en temps réel.
+
+### 1.3 Portée
+- Frontend : React.js.
+- Backend : C# avec ASP.NET Core.
+- Base de données : PostgreSQL.
+- Fonctionnalités : Gestion des utilisateurs, création/gestion de sessions, vote collaboratif, multilinguisme (FR/EN).
+
+---
+
+## 2. Public cible
+
+- **Hôte** : Utilisateur authentifié (ex. : Scrum Master, Product Owner) qui configure et gère les sessions.
+- **Participants** : Membres anonymes de l'équipe (ex. : développeurs, testeurs) qui votent sur les US.
+
+---
+
+## 3. Fonctionnalités principales
+
+### 3.1 Gestion des utilisateurs
+- **Inscription** :
+  - Champs : Email, mot de passe.
+  - Validation : Email unique, mot de passe sécurisé (min. 8 caractères).
+- **Connexion/Déconnexion** :
+  - Authentification via JWT.
+  - Interface simple avec email/mot de passe.
+
+### 3.2 Gestion des sessions
+- **Création de session** :
+  - Champs : Nom de la session, échelle de vote, liste des User Stories.
+  - Échelle de vote : Choix entre Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89) ou personnalisée (max 100 valeurs).
+  - User Stories : Titre (obligatoire), description (facultative).
+  - Résultat : Génération d’un lien unique partageable.
+- **Suppression** : L’hôte peut supprimer une session.
+
+### 3.3 Participation
+- **Rejoindre une session** :
+  - Via lien unique.
+  - Entrée d’un alias (anonyme, pas de compte requis).
+  - Pas de limite au nombre de participants.
+- **Affichage** : Liste des participants en temps réel (alias + statut de vote).
+
+### 3.4 Vote
+- **Mécanisme** :
+  - Chaque participant vote sur l’US courante en sélectionnant une valeur dans l’échelle.
+  - Les non-votants sont ignorés ("ne sait pas").
+- **Contrôles de l’hôte** :
+  - Forcer la révélation des votes à tout moment.
+  - Passer une US sans estimation.
+  - Relancer le vote d’une US (réinitialisation des votes pour un nouveau tour).
+- **Notification** :
+  - Option activable par l’hôte : Notification visuelle/sonore quand tous les participants ont voté.
+
+### 3.5 Résultats
+- **Calcul** :
+  - Moyenne des votes, arrondie à la valeur supérieure de l’échelle (ex. : 3, 5, 8 → 5.33 → 8).
+- **Affichage** : Résultat final visible dans l’interface après révélation.
+
+### 3.6 Multilinguisme
+- Support français et anglais.
+- Basculable via un menu déroulant ou bouton.
+
+---
+
+## 4. Exigences non fonctionnelles
+
+### 4.1 Sécurité
+- Authentification JWT pour l’hôte.
+- Chiffrement des mots de passe (ex. : BCrypt).
+- Validation des entrées (ex. : échelle personnalisée ≤ 100 valeurs).
+
+### 4.2 Performance
+- Synchronisation en temps réel fluide via WebSocket.
+- Réponse API < 500 ms pour 90 % des requêtes.
+- Supporte jusqu’à 50 participants par session sans dégradation notable.
+
+### 4.3 Scalabilité
+- Architecture backend/WebSocket prête pour clustering (ex. : déploiement cloud scalable comme AWS/Azure).
+
+### 4.4 Expérience utilisateur
+- **Design** : Interface élégante avec cartes physiques simulées (effet 3D, animation flip).
+- **Accessibilité** : Responsive (mobile/desktop).
+- **Feedback** : Indications claires (ex. : "X a voté", notification "Tous ont voté").
+
+---
+
+## 5. Architecture technique
+
+### 5.1 Frontend (React.js)
+- **Bibliothèques** :
+  - React Router (navigation).
+  - Axios (API).
+  - `socket.io-client` (temps réel).
+  - Material-UI/styled-components (style cartes).
+  - `i18next` (multilinguisme).
+- **Composants** :
+  - `LoginPage`, `RegisterPage`, `Dashboard`.
+  - `SessionConfig` : Configurer session.
+  - `SessionRoom` : Gérer/voter dans la session.
+
+### 5.2 Backend (C# avec ASP.NET Core)
+- **API RESTful** :
+  - `POST /api/auth/register`, `POST /api/auth/login`.
+  - `POST /api/sessions`, `GET /api/sessions/{id}`.
+  - `POST /api/sessions/{id}/join`, `POST /api/sessions/{id}/vote`.
+  - `POST /api/sessions/{id}/reveal`, `POST /api/sessions/{id}/skip`, `POST /api/sessions/{id}/restart-vote`.
+- **WebSocket** : Événements temps réel (vote, révélation, etc.).
+
+### 5.3 Base de données (PostgreSQL)
+- **Schéma** :
+  - `Users` : `Id` (UUID), `Email`, `PasswordHash`.
+  - `Sessions` : `Id` (UUID), `Name`, `HostId` (FK), `Scale`, `CreatedAt`.
+  - `UserStories` : `Id` (UUID), `SessionId` (FK), `Title`, `Description`, `FinalEstimate`.
+  - `Participants` : `Id` (UUID), `SessionId` (FK), `Alias`.
+  - `Votes` : `Id` (UUID), `ParticipantId` (FK), `UserStoryId` (FK), `Value`.
+
+---
+
+## 6. Flux d’utilisation
+
+### 6.1 Scénario principal
+1. L’hôte se connecte, crée une session (échelle Fibonacci, 3 US), partage le lien.
+2. 5 participants rejoignent avec des alias.
+3. Sur US1 :
+   - Votes : 3, 5, 8 (2 ne votent pas).
+   - Notification (si activée) : "3/5 ont voté".
+   - Hôte révèle : Moyenne 5.33 → 8.
+   - Hôte relance si nécessaire.
+4. Sur US2 : Hôte passe.
+5. Résultats affichés.
+
+---
+
+## 7. Critères d’acceptation
+
+- L’hôte peut créer une session avec une échelle personnalisée (≤ 100 valeurs).
+- Les participants rejoignent anonymement et votent en temps réel.
+- L’hôte peut révéler, passer ou relancer une US.
+- Notification "tous ont voté" fonctionne (si activée).
+- Résultat = moyenne arrondie à la valeur supérieure de l’échelle.
+- Interface disponible en FR/EN.
+
+---
+
+## 8. Contraintes
+
+- Pas de limite de participants pour la v1.
+- Pas d’export des résultats pour la v1.
+- Déploiement scalable requis (ex. : cloud).
+
+---
+
+## 9. Jalons
+
+1. **Maquettes** : Wireframes UX (1 semaine).
+2. **MVP** : Session simple (vote, révélation, relance) (3-4 semaines).
+3. **Tests** : Validation temps réel et multilinguisme (1 semaine).
+4. **Déploiement initial** : Version bêta (1 semaine).
+
+---
+
+## 10. Annexes
+
+- **Technologies** : React.js, C# (ASP.NET Core), PostgreSQL.
+- **Inspirations UX** : Cartes physiques (ex. : Poker Planner, Scrum Poker Online).
+
+---
+
