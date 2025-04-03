@@ -46,150 +46,161 @@ export interface IStorage {
   clearVotesForUserStory(userStoryId: number): Promise<boolean>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private sessions: Map<string, Session>;
-  private userStories: Map<number, UserStory>;
-  private participants: Map<string, Participant>;
-  private votes: Map<string, Vote>;
-  private userIdCounter: number;
-  private userStoryIdCounter: number;
-  private voteIdCounter: number;
+import { db } from './db';
+import { eq, and, desc, asc } from 'drizzle-orm';
 
-  constructor() {
-    this.users = new Map();
-    this.sessions = new Map();
-    this.userStories = new Map();
-    this.participants = new Map();
-    this.votes = new Map();
-    this.userIdCounter = 1;
-    this.userStoryIdCounter = 1;
-    this.voteIdCounter = 1;
-  }
-
+export class DatabaseStorage implements IStorage {
   // ===== User Methods =====
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const results = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    return results[0];
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.email.toLowerCase() === email.toLowerCase()
-    );
+    const results = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email.toLowerCase()))
+      .limit(1);
+    return results[0];
   }
   
   async getUserByFirebaseId(firebaseId: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.firebaseId === firebaseId
-    );
+    const results = await db
+      .select()
+      .from(users)
+      .where(eq(users.firebaseId, firebaseId))
+      .limit(1);
+    return results[0];
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userIdCounter++;
-    const user: User = { 
-      id, 
-      email: insertUser.email,
-      password: insertUser.password ?? null,
-      firebaseId: insertUser.firebaseId ?? null
-    };
-    this.users.set(id, user);
-    return user;
+    const results = await db
+      .insert(users)
+      .values({
+        email: insertUser.email,
+        password: insertUser.password,
+        firebaseId: insertUser.firebaseId
+      })
+      .returning();
+    return results[0];
   }
 
   // ===== Session Methods =====
   async getSession(id: string): Promise<Session | undefined> {
-    return this.sessions.get(id);
+    const results = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, id))
+      .limit(1);
+    return results[0];
   }
 
   async getSessionsByHostId(hostId: number): Promise<Session[]> {
-    return Array.from(this.sessions.values()).filter(
-      (session) => session.hostId === hostId
-    );
+    return db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.hostId, hostId))
+      .orderBy(desc(sessions.createdAt));
   }
 
   async createSession(insertSession: InsertSession): Promise<Session> {
-    const id = uuidv4();
-    const createdAt = new Date();
-    const session: Session = { 
-      id,
-      name: insertSession.name,
-      hostId: insertSession.hostId,
-      scale: insertSession.scale,
-      createdAt,
-      notificationsEnabled: insertSession.notificationsEnabled ?? false,
-      hostCanVote: insertSession.hostCanVote ?? false,
-      allowSpectators: insertSession.allowSpectators ?? true
-    };
-    this.sessions.set(id, session);
-    return session;
+    const results = await db
+      .insert(sessions)
+      .values({
+        name: insertSession.name,
+        hostId: insertSession.hostId,
+        scale: insertSession.scale,
+        notificationsEnabled: insertSession.notificationsEnabled ?? false,
+        hostCanVote: insertSession.hostCanVote ?? false,
+        allowSpectators: insertSession.allowSpectators ?? true
+      })
+      .returning();
+    return results[0];
   }
 
   async deleteSession(id: string): Promise<boolean> {
-    // First delete all related entities
-    const userStoriesToDelete = Array.from(this.userStories.values())
-      .filter(story => story.sessionId === id)
-      .map(story => story.id);
-    
-    for (const storyId of userStoriesToDelete) {
-      // Delete all votes for this story
-      await this.clearVotesForUserStory(storyId);
-      // Delete the story itself
-      this.userStories.delete(storyId);
+    try {
+      // First clear votes for all stories in this session
+      const userStoriesInSession = await this.getUserStories(id);
+      for (const story of userStoriesInSession) {
+        await this.clearVotesForUserStory(story.id);
+      }
+      
+      // Then delete all user stories
+      await db
+        .delete(userStories)
+        .where(eq(userStories.sessionId, id));
+      
+      // Delete all participants
+      await db
+        .delete(participants)
+        .where(eq(participants.sessionId, id));
+      
+      // Finally delete the session
+      const result = await db
+        .delete(sessions)
+        .where(eq(sessions.id, id));
+      
+      return result.count > 0;
+    } catch (error) {
+      console.error("Error deleting session:", error);
+      return false;
     }
-    
-    // Delete all participants
-    const participantsToDelete = Array.from(this.participants.values())
-      .filter(p => p.sessionId === id)
-      .map(p => p.id);
-    
-    for (const pId of participantsToDelete) {
-      this.participants.delete(pId);
-    }
-    
-    // Finally delete the session
-    return this.sessions.delete(id);
   }
 
   // ===== User Story Methods =====
   async getUserStories(sessionId: string): Promise<UserStory[]> {
-    return Array.from(this.userStories.values())
-      .filter(story => story.sessionId === sessionId)
-      .sort((a, b) => a.order - b.order);
+    return db
+      .select()
+      .from(userStories)
+      .where(eq(userStories.sessionId, sessionId))
+      .orderBy(asc(userStories.order));
   }
 
   async getUserStory(id: number): Promise<UserStory | undefined> {
-    return this.userStories.get(id);
+    const results = await db
+      .select()
+      .from(userStories)
+      .where(eq(userStories.id, id))
+      .limit(1);
+    return results[0];
   }
 
   async getActiveUserStory(sessionId: string): Promise<UserStory | undefined> {
-    return Array.from(this.userStories.values()).find(
-      story => story.sessionId === sessionId && story.isActive
-    );
+    const results = await db
+      .select()
+      .from(userStories)
+      .where(and(
+        eq(userStories.sessionId, sessionId),
+        eq(userStories.isActive, true)
+      ))
+      .limit(1);
+    return results[0];
   }
 
   async createUserStory(insertUserStory: InsertUserStory): Promise<UserStory> {
-    const id = this.userStoryIdCounter++;
-    const userStory: UserStory = { 
-      id,
-      sessionId: insertUserStory.sessionId,
-      title: insertUserStory.title,
-      description: insertUserStory.description ?? null,
-      order: insertUserStory.order,
-      finalEstimate: null,
-      isActive: false,
-      isCompleted: false
-    };
-    this.userStories.set(id, userStory);
-    return userStory;
+    const results = await db
+      .insert(userStories)
+      .values({
+        sessionId: insertUserStory.sessionId,
+        title: insertUserStory.title,
+        description: insertUserStory.description,
+        order: insertUserStory.order,
+        isActive: false,
+        isCompleted: false
+      })
+      .returning();
+    return results[0];
   }
 
   async updateUserStory(id: number, updates: Partial<UserStory>): Promise<UserStory | undefined> {
-    const story = await this.getUserStory(id);
-    if (!story) return undefined;
-    
-    const updatedStory = { ...story, ...updates };
-    this.userStories.set(id, updatedStory);
-    return updatedStory;
+    const results = await db
+      .update(userStories)
+      .set(updates)
+      .where(eq(userStories.id, id))
+      .returning();
+    return results[0];
   }
 
   async setActiveUserStory(sessionId: string, userStoryId: number): Promise<UserStory | undefined> {
@@ -213,49 +224,65 @@ export class MemStorage implements IStorage {
 
   // ===== Participant Methods =====
   async getParticipant(id: string): Promise<Participant | undefined> {
-    return this.participants.get(id);
+    const results = await db
+      .select()
+      .from(participants)
+      .where(eq(participants.id, id))
+      .limit(1);
+    return results[0];
   }
 
   async getParticipantByAlias(sessionId: string, alias: string): Promise<Participant | undefined> {
-    return Array.from(this.participants.values()).find(
-      p => p.sessionId === sessionId && p.alias.toLowerCase() === alias.toLowerCase()
-    );
+    const results = await db
+      .select()
+      .from(participants)
+      .where(and(
+        eq(participants.sessionId, sessionId),
+        eq(participants.alias, alias.toLowerCase())
+      ))
+      .limit(1);
+    return results[0];
   }
   
   async getParticipantByUserId(sessionId: string, userId: number): Promise<Participant | undefined> {
-    return Array.from(this.participants.values()).find(
-      p => p.sessionId === sessionId && p.userId === userId
-    );
+    const results = await db
+      .select()
+      .from(participants)
+      .where(and(
+        eq(participants.sessionId, sessionId),
+        eq(participants.userId, userId)
+      ))
+      .limit(1);
+    return results[0];
   }
 
   async getSessionParticipants(sessionId: string): Promise<Participant[]> {
-    return Array.from(this.participants.values())
-      .filter(p => p.sessionId === sessionId);
+    return db
+      .select()
+      .from(participants)
+      .where(eq(participants.sessionId, sessionId));
   }
 
   async createParticipant(insertParticipant: InsertParticipant): Promise<Participant> {
-    const id = uuidv4();
-    const joinedAt = new Date();
-    const participant: Participant = { 
-      id,
-      sessionId: insertParticipant.sessionId,
-      alias: insertParticipant.alias,
-      role: insertParticipant.role ?? ParticipantRole.VOTER,
-      userId: insertParticipant.userId ?? null,
-      isConnected: true, 
-      joinedAt 
-    };
-    this.participants.set(id, participant);
-    return participant;
+    const results = await db
+      .insert(participants)
+      .values({
+        sessionId: insertParticipant.sessionId,
+        alias: insertParticipant.alias,
+        role: insertParticipant.role ?? ParticipantRole.VOTER,
+        userId: insertParticipant.userId
+      })
+      .returning();
+    return results[0];
   }
 
   async updateParticipant(id: string, updates: Partial<Participant>): Promise<Participant | undefined> {
-    const participant = await this.getParticipant(id);
-    if (!participant) return undefined;
-    
-    const updatedParticipant = { ...participant, ...updates };
-    this.participants.set(id, updatedParticipant);
-    return updatedParticipant;
+    const results = await db
+      .update(participants)
+      .set(updates)
+      .where(eq(participants.id, id))
+      .returning();
+    return results[0];
   }
   
   async updateParticipantConnection(id: string, isConnected: boolean): Promise<Participant | undefined> {
@@ -264,14 +291,22 @@ export class MemStorage implements IStorage {
 
   // ===== Vote Methods =====
   async getVote(participantId: string, userStoryId: number): Promise<Vote | undefined> {
-    return Array.from(this.votes.values()).find(
-      v => v.participantId === participantId && v.userStoryId === userStoryId
-    );
+    const results = await db
+      .select()
+      .from(votes)
+      .where(and(
+        eq(votes.participantId, participantId),
+        eq(votes.userStoryId, userStoryId)
+      ))
+      .limit(1);
+    return results[0];
   }
 
   async getVotesByUserStory(userStoryId: number): Promise<Vote[]> {
-    return Array.from(this.votes.values())
-      .filter(v => v.userStoryId === userStoryId);
+    return db
+      .select()
+      .from(votes)
+      .where(eq(votes.userStoryId, userStoryId));
   }
 
   async createOrUpdateVote(vote: InsertVote): Promise<Vote> {
@@ -280,32 +315,40 @@ export class MemStorage implements IStorage {
     
     if (existingVote) {
       // Update existing vote
-      const updatedVote = { ...existingVote, value: vote.value };
-      this.votes.set(String(existingVote.id), updatedVote);
-      return updatedVote;
+      const results = await db
+        .update(votes)
+        .set({ value: vote.value })
+        .where(and(
+          eq(votes.participantId, vote.participantId),
+          eq(votes.userStoryId, vote.userStoryId)
+        ))
+        .returning();
+      return results[0];
     } else {
       // Create new vote
-      const id = this.voteIdCounter++;
-      const newVote: Vote = { ...vote, id };
-      this.votes.set(String(id), newVote);
-      return newVote;
+      const results = await db
+        .insert(votes)
+        .values({
+          participantId: vote.participantId,
+          userStoryId: vote.userStoryId,
+          value: vote.value
+        })
+        .returning();
+      return results[0];
     }
   }
 
   async clearVotesForUserStory(userStoryId: number): Promise<boolean> {
-    let deleted = false;
-    
-    // Use Array.from to avoid iterator issues
-    const entries = Array.from(this.votes.entries());
-    for (const [key, vote] of entries) {
-      if (vote.userStoryId === userStoryId) {
-        this.votes.delete(key);
-        deleted = true;
-      }
+    try {
+      const result = await db
+        .delete(votes)
+        .where(eq(votes.userStoryId, userStoryId));
+      return result.count > 0;
+    } catch (error) {
+      console.error("Error clearing votes:", error);
+      return false;
     }
-    
-    return deleted;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
