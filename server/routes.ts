@@ -194,7 +194,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   async function handleHostJoinSession(client: WSClient, data: WSMessage) {
     try {
-      const { sessionId, userId, token } = data;
+      const { sessionId, token } = data;
+      let { userId } = data;
       
       // Verify token (Firebase or Development)
       try {
@@ -207,18 +208,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log('DEV MODE: Host joining session with development token');
           
           // Find the dev user (should have been created during verify-token)
-          const user = await storage.getUserByFirebaseId('dev-firebase-id');
+          let user = await storage.getUserByFirebaseId('dev-firebase-id');
           
           if (!user) {
             console.log('DEV MODE: No dev user found, creating one');
-            await storage.createUser({
+            user = await storage.createUser({
               email: 'dev@example.com',
               firebaseId: 'dev-firebase-id'
             });
           }
           
-          // In dev mode, we accept any userId as valid
-          console.log('DEV MODE: Skipping user ID verification');
+          // In dev mode, we can just override userId with the dev user id for consistency
+          // This ensures the user can access their sessions
+          userId = user.id;
+          
+          // We successfully validated in dev mode, continue with the request
+          console.log('DEV MODE: Authentication successful with development token');
         } else {
           // Regular Firebase token verification
           const decodedToken = await auth.verifyIdToken(token);
@@ -674,30 +679,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     const token = authHeader.split(' ')[1];
     
-    try {
-      // Check if this is a development token
-      if (DEV_MODE && (token.startsWith('mock-token-') || token.startsWith('mock-id-token-') || token.startsWith('dev-token-'))) {
-        console.log('DEV MODE: Authenticating with development token');
-        
+    // Check if this is a development token
+    if (DEV_MODE && (token.startsWith('mock-token-') || token.startsWith('mock-id-token-') || token.startsWith('dev-token-'))) {
+      console.log('DEV MODE: Authenticating with development token');
+      
+      try {
         // Find the dev user (should have been created during verify-token)
-        const user = await storage.getUserByFirebaseId('dev-firebase-id');
+        let user = await storage.getUserByFirebaseId('dev-firebase-id');
         
-        if (user) {
-          req.body.userId = user.id; // Attach user ID to request
-          return next();
-        } else {
+        if (!user) {
           // If no dev user exists, create one
           console.log('DEV MODE: Creating development user for authentication');
-          const newUser = await storage.createUser({
+          user = await storage.createUser({
             email: 'dev@example.com',
             firebaseId: 'dev-firebase-id'
           });
-          
-          req.body.userId = newUser.id;
-          return next();
         }
+        
+        req.body.userId = user.id; // Attach user ID to request
+        return next(); // Important: return here to skip Firebase verification
+      } catch (error) {
+        console.error('DEV MODE authentication error:', error);
+        return res.status(500).json({ message: 'Development mode authentication error' });
       }
-      
+    }
+    
+    // Only get here if not in dev mode or not a dev token
+    try {
       // Regular Firebase token verification
       const decodedToken = await auth.verifyIdToken(token);
       const uid = decodedToken.uid;
@@ -716,7 +724,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       req.body.userId = user.id; // Attach user ID to request
-      next();
+      return next();
     } catch (error) {
       console.error('Authentication error:', error);
       return res.status(403).json({ message: 'Invalid or expired token' });
