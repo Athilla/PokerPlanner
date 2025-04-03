@@ -40,6 +40,7 @@ export default function useSessionWebSocket({
   const [sessionError, setSessionError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Update dependencies list to include t and toast
   useEffect(() => {
     if (!sessionId) return;
 
@@ -350,7 +351,7 @@ export default function useSessionWebSocket({
       removeMessageListener("session_deleted", handleSessionDeleted);
       removeMessageListener("error", handleError);
     };
-  }, [sessionId, isHost]);
+  }, [sessionId, isHost, addMessageListener, removeMessageListener, t, toast, setSession, setUserStories, setParticipants, setActiveStory, setCompletedStories, setVotingScale, setVotes, setVotesRevealed, setFinalEstimate, setCompletedVotes]);
 
   return { sessionError };
 }

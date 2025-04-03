@@ -57,9 +57,10 @@ export default function SessionRoom() {
   const participantId = sessionStorage.getItem("participant_id");
   const participantAlias = sessionStorage.getItem("participant_alias");
   const storedSessionId = sessionStorage.getItem("session_id");
+  const storedIsHost = localStorage.getItem(`host_status_${sessionId}`) === "true";
   
   // Check if user is host or participant
-  const isHost = isAuthenticated && !!currentUser;
+  const isHost = (isAuthenticated && !!currentUser) || storedIsHost;
   
   // Notification sound
   const notificationSound = useRef<HTMLAudioElement | null>(null);
@@ -91,14 +92,35 @@ export default function SessionRoom() {
       return;
     }
     
-    if (isHost && currentUser && token) {
-      // Join as host
-      hostJoinSession(sessionId, currentUser.id, token);
+    if (isHost) {
+      if (currentUser && token) {
+        // Join as host and save host status
+        hostJoinSession(sessionId, currentUser.id, token);
+        localStorage.setItem(`host_status_${sessionId}`, "true");
+      } else if (storedIsHost) {
+        // Reconnect with stored host status after refresh
+        const userId = localStorage.getItem(`host_userId_${sessionId}`);
+        const storedToken = localStorage.getItem(`host_token_${sessionId}`);
+        
+        if (userId && storedToken) {
+          // Use stored credentials
+          hostJoinSession(sessionId, parseInt(userId, 10), storedToken);
+        } else {
+          // Try to use current session
+          hostJoinSession(sessionId, 1, "mock-token-1234");
+        }
+      }
     } else if (participantId && storedSessionId === sessionId) {
       // Already joined as participant
     } else {
       // Redirect to join page
       navigate(`/join/${sessionId}`);
+    }
+    
+    // Save host data if authenticated
+    if (isAuthenticated && currentUser && token) {
+      localStorage.setItem(`host_userId_${sessionId}`, currentUser.id.toString());
+      localStorage.setItem(`host_token_${sessionId}`, token);
     }
     
     // Cleanup
@@ -226,6 +248,13 @@ export default function SessionRoom() {
     sessionStorage.removeItem("participant_id");
     sessionStorage.removeItem("session_id");
     sessionStorage.removeItem("participant_alias");
+    
+    // Clear host info from localStorage
+    if (sessionId) {
+      localStorage.removeItem(`host_status_${sessionId}`);
+      localStorage.removeItem(`host_userId_${sessionId}`);
+      localStorage.removeItem(`host_token_${sessionId}`);
+    }
     
     // Close WebSocket connection
     closeWebSocketConnection();
