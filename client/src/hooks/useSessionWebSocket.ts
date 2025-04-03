@@ -82,8 +82,19 @@ export default function useSessionWebSocket({
 
     // Handler for session joined event (participant)
     const handleSessionJoined = (data: any) => {
-      console.log("Session joined event received:", data);
+      console.log("======== Session joined event received (participant) ========");
+      console.log("Raw data:", JSON.stringify(data, null, 2));
+      
+      if (!data || !data.session) {
+        console.error("Invalid session_joined data", data);
+        return;
+      }
+      
       setSession(data.session);
+      console.log("Session set to:", data.session);
+      
+      // Check and log user stories
+      console.log("User stories received for participant:", JSON.stringify(data.userStories, null, 2));
       
       if (!data.userStories || data.userStories.length === 0) {
         console.warn("No user stories received from server or empty array");
@@ -92,29 +103,58 @@ export default function useSessionWebSocket({
       // Force to use the correct type for userStories array
       const typedUserStories: UserStory[] = Array.isArray(data.userStories) ? 
         data.userStories.map((story: any) => ({
-          id: story.id,
-          title: story.title,
-          description: story.description,
-          sessionId: story.sessionId,
-          isActive: story.isActive,
-          isCompleted: story.isCompleted,
-          finalEstimate: story.finalEstimate,
-          order: story.order
+          id: Number(story.id),
+          title: String(story.title || ""),
+          description: story.description ? String(story.description) : null,
+          sessionId: String(story.sessionId || ""),
+          isActive: Boolean(story.isActive),
+          isCompleted: Boolean(story.isCompleted),
+          finalEstimate: story.finalEstimate !== undefined && story.finalEstimate !== null ? 
+            Number(story.finalEstimate) : null,
+          order: Number(story.order || 0)
         })) : [];
       
-      console.log("Typed user stories for participant:", typedUserStories);
-      setUserStories(typedUserStories);
-      setParticipants(data.participants || []);
+      console.log("Typed and formatted user stories for participant:", JSON.stringify(typedUserStories, null, 2));
       
-      // Find active story
-      let activeStory = data.activeStory;
-      if (!activeStory && typedUserStories.length > 0) {
-        activeStory = typedUserStories.find((s) => s.isActive === true);
-        console.log("Active story found in user stories for participant:", activeStory);
+      // Check if we have any stories before proceeding
+      if (typedUserStories.length > 0) {
+        console.log(`Found ${typedUserStories.length} user stories to display for participant`);
+        
+        // Store stories in state
+        setUserStories(typedUserStories);
+        
+        // Find active story - first check data.activeStory, then search in userStories
+        let activeStory = data.activeStory;
+        
+        // If activeStory is not directly provided, find it from the typedUserStories array
+        if (!activeStory || !activeStory.id) {
+          const activeIndex = typedUserStories.findIndex((s) => Boolean(s.isActive) === true);
+          
+          if (activeIndex >= 0) {
+            activeStory = typedUserStories[activeIndex];
+            console.log(`Found active story at index ${activeIndex} for participant:`, JSON.stringify(activeStory, null, 2));
+          } else if (typedUserStories.length > 0) {
+            // If no active story found, fallback to the first story
+            activeStory = typedUserStories[0];
+            console.log("No active story found for participant, using first story as fallback:", JSON.stringify(activeStory, null, 2));
+          }
+        }
+        
+        console.log("Final active story being set for participant:", JSON.stringify(activeStory, null, 2));
+        
+        // Always set an active story if possible
+        if (activeStory) {
+          setActiveStory(activeStory);
+        } else {
+          console.warn("Could not find any story to set as active for participant");
+          setActiveStory(null);
+        }
+      } else {
+        console.warn("No stories available to display for participant");
       }
       
-      console.log("Final active story determined for participant:", activeStory);
-      setActiveStory(activeStory || null);
+      // Set participants
+      setParticipants(data.participants || []);
       
       // Set completed stories
       const completed = typedUserStories.filter((s) => s.isCompleted === true);
@@ -144,16 +184,19 @@ export default function useSessionWebSocket({
     
     // Handler for host session joined event
     const handleHostSessionJoined = (data: any) => {
-      console.log("Host session joined event received:", data);
+      console.log("======== Host session joined event received ========");
+      console.log("Raw data:", JSON.stringify(data, null, 2));
+      
       if (!data || !data.session) {
         console.error("Invalid host_session_joined data", data);
         return;
       }
       
       setSession(data.session);
+      console.log("Session set to:", data.session);
       
       // Check and log user stories
-      console.log("User stories received:", data.userStories);
+      console.log("User stories received:", JSON.stringify(data.userStories, null, 2));
       
       if (!data.userStories || data.userStories.length === 0) {
         console.warn("No user stories received from server or empty array");
@@ -162,29 +205,58 @@ export default function useSessionWebSocket({
       // Force to use the correct type for userStories array
       const typedUserStories: UserStory[] = Array.isArray(data.userStories) ? 
         data.userStories.map((story: any) => ({
-          id: story.id,
-          title: story.title,
-          description: story.description,
-          sessionId: story.sessionId,
-          isActive: story.isActive,
-          isCompleted: story.isCompleted,
-          finalEstimate: story.finalEstimate,
-          order: story.order
+          id: Number(story.id),
+          title: String(story.title || ""),
+          description: story.description ? String(story.description) : null,
+          sessionId: String(story.sessionId || ""),
+          isActive: Boolean(story.isActive),
+          isCompleted: Boolean(story.isCompleted),
+          finalEstimate: story.finalEstimate !== undefined && story.finalEstimate !== null ? 
+            Number(story.finalEstimate) : null,
+          order: Number(story.order || 0)
         })) : [];
       
-      console.log("Typed user stories:", typedUserStories);
-      setUserStories(typedUserStories);
-      setParticipants(data.participants || []);
+      console.log("Typed and formatted user stories:", JSON.stringify(typedUserStories, null, 2));
       
-      // Find active story - first check data.activeStory, then search in userStories
-      let activeStory = data.activeStory;
-      if (!activeStory && typedUserStories.length > 0) {
-        activeStory = typedUserStories.find((s) => s.isActive === true);
-        console.log("Active story found in user stories:", activeStory);
+      // Check if we have any stories before proceeding
+      if (typedUserStories.length > 0) {
+        console.log(`Found ${typedUserStories.length} user stories to display`);
+        
+        // Store stories in state
+        setUserStories(typedUserStories);
+        
+        // Find active story - first check data.activeStory, then search in userStories
+        let activeStory = data.activeStory;
+        
+        // If activeStory is not directly provided, find it from the typedUserStories array
+        if (!activeStory || !activeStory.id) {
+          const activeIndex = typedUserStories.findIndex((s) => Boolean(s.isActive) === true);
+          
+          if (activeIndex >= 0) {
+            activeStory = typedUserStories[activeIndex];
+            console.log(`Found active story at index ${activeIndex}:`, JSON.stringify(activeStory, null, 2));
+          } else if (typedUserStories.length > 0) {
+            // If no active story found, fallback to the first story
+            activeStory = typedUserStories[0];
+            console.log("No active story found, using first story as fallback:", JSON.stringify(activeStory, null, 2));
+          }
+        }
+        
+        console.log("Final active story being set:", JSON.stringify(activeStory, null, 2));
+        
+        // Always set an active story if possible
+        if (activeStory) {
+          setActiveStory(activeStory);
+        } else {
+          console.warn("Could not find any story to set as active");
+          setActiveStory(null);
+        }
+      } else {
+        console.warn("No stories available to display");
       }
       
-      console.log("Final active story determined:", activeStory);
-      setActiveStory(activeStory || null);
+      // Set participants
+      setParticipants(data.participants || []);
       
       // Set completed stories
       const completed = typedUserStories.filter((s) => s.isCompleted === true);
