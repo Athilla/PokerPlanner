@@ -87,8 +87,8 @@ export function closeWebSocketConnection(): void {
 }
 
 // Maximum number of attempts to send a message
-const MAX_SEND_ATTEMPTS = 3;
-const SEND_RETRY_DELAY = 300;
+const MAX_SEND_ATTEMPTS = 5;
+const SEND_RETRY_DELAY = 500;
 
 // Generic function to send messages through WebSocket
 export function sendMessage(type: string, data: any = {}, attempt: number = 0): void {
@@ -96,11 +96,24 @@ export function sendMessage(type: string, data: any = {}, attempt: number = 0): 
   
   // If the socket is open, send the message immediately
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type,
-      ...data
-    }));
-    return;
+    try {
+      ws.send(JSON.stringify({
+        type,
+        ...data
+      }));
+      console.log(`Message sent successfully: ${type}`);
+      return;
+    } catch (error) {
+      console.error(`Error sending message (${type}):`, error);
+      
+      // Store the message to retry on next connection
+      const pendingMessage = { type, data };
+      if (!window.pendingMessages) {
+        window.pendingMessages = [];
+      }
+      window.pendingMessages.push(pendingMessage);
+      return;
+    }
   }
   
   // If the socket is connecting, wait for it to open
@@ -114,7 +127,7 @@ export function sendMessage(type: string, data: any = {}, attempt: number = 0): 
   
   // If we exceed the maximum attempts or socket is closing/closed
   if (attempt >= MAX_SEND_ATTEMPTS || ws.readyState > WebSocket.CONNECTING) {
-    console.error(`Failed to send message (${type}) after ${attempt} attempts. WebSocket state: ${ws.readyState}`);
+    console.log(`Queuing message (${type}) for later delivery. WebSocket state: ${ws.readyState}`);
     
     // Store the message to send upon reconnection, if needed
     const pendingMessage = { type, data };
@@ -122,6 +135,12 @@ export function sendMessage(type: string, data: any = {}, attempt: number = 0): 
       window.pendingMessages = [];
     }
     window.pendingMessages.push(pendingMessage);
+    
+    // Force reconnection attempt if socket is closed
+    if (ws.readyState === WebSocket.CLOSED) {
+      console.log("WebSocket closed, attempting to create a new connection");
+      createWebSocketConnection();
+    }
   }
 }
 

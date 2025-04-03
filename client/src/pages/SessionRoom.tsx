@@ -108,11 +108,19 @@ export default function SessionRoom() {
           if (userId && storedToken) {
             // Use stored credentials
             console.log("Using stored credentials for host reconnection");
-            hostJoinSession(sessionId, parseInt(userId, 10), storedToken);
+            
+            // Wait a moment to ensure WebSocket is fully established
+            setTimeout(() => {
+              hostJoinSession(sessionId, parseInt(userId, 10), storedToken);
+            }, 300);
           } else {
             // Try to use mock token as a fallback
             console.log("Using fallback mock token for host reconnection");
-            hostJoinSession(sessionId, 1, "mock-token-1234");
+            
+            // Wait a moment to ensure WebSocket is fully established
+            setTimeout(() => {
+              hostJoinSession(sessionId, 123, "mock-token-1234");
+            }, 300);
           }
         }
       } else if (participantId && storedSessionId === sessionId) {
