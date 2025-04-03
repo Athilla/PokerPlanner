@@ -9,12 +9,14 @@ const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
-  password: text("password").notNull(),
+  password: text("password"),
+  firebaseId: text("firebase_id").unique(),
 });
 
 export const insertUserSchema = createInsertSchema(users).extend({
   email: z.string().regex(emailRegex, { message: "Invalid email format" }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters" }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters" }).optional(),
+  firebaseId: z.string().optional(),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;

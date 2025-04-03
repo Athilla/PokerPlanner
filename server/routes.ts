@@ -9,13 +9,11 @@ import {
   insertSessionSchema, 
   insertUserStorySchema, 
   joinSessionSchema, 
-  voteSchema 
+  voteSchema,
+  Vote
 } from "@shared/schema";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-
-// JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || "planning-poker-secret-key";
+import { auth } from "./firebase-admin";
+import { NextFunction } from "express";
 
 // Utility to get Fibonacci sequence
 function generateFibonacciScale(): number[] {
@@ -160,7 +158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const activeStory = userStories.find(story => story.isActive);
       
       // Get votes if there's an active story
-      let votes = [];
+      let votes: Vote[] = [];
       if (activeStory) {
         votes = await storage.getVotesByUserStory(activeStory.id);
       }
@@ -198,13 +196,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { sessionId, userId, token } = data;
       
-      // Verify token
+      // Verify Firebase token
       try {
-        const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-        if (decoded.userId !== userId) {
-          throw new Error('Invalid token');
+        if (!token) {
+          throw new Error('No token provided');
+        }
+        
+        const decodedToken = await auth.verifyIdToken(token);
+        const firebaseUid = decodedToken.uid;
+        
+        // Get the user from our database
+        const user = await storage.getUserByFirebaseId(firebaseUid);
+        
+        if (!user || user.id !== userId) {
+          throw new Error('Invalid token or user ID mismatch');
         }
       } catch (error) {
+        console.error('Firebase auth error:', error);
         return sendToClient(client, {
           type: 'error',
           message: 'Authentication failed'
@@ -553,7 +561,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   
   function broadcastToSession(sessionId: string, data: any, excludeClients: WebSocket[] = []) {
-    for (const [ws, client] of clients.entries()) {
+    // Use Array.from to avoid iterator issues
+    const entries = Array.from(clients.entries());
+    for (const [ws, client] of entries) {
       if (client.sessionId === sessionId && !excludeClients.includes(ws) && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(data));
       }
@@ -564,79 +574,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const api = express.Router();
   app.use('/api', api);
   
-  // Auth routes
-  api.post('/auth/register', async (req: Request, res: Response) => {
+  // Firebase Auth routes
+  api.post('/auth/verify-token', async (req: Request, res: Response) => {
     try {
-      const userData = insertUserSchema.parse(req.body);
+      const { idToken } = req.body;
       
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email);
-      if (existingUser) {
-        return res.status(409).json({ message: 'Email already in use' });
+      if (!idToken) {
+        return res.status(400).json({ message: 'No token provided' });
       }
       
-      // Hash password
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(userData.password, saltRounds);
+      // Verify Firebase token
+      const decodedToken = await auth.verifyIdToken(idToken);
+      const firebaseUid = decodedToken.uid;
+      const email = decodedToken.email || '';
       
-      // Create user with hashed password
-      const user = await storage.createUser({
-        ...userData,
-        password: hashedPassword
-      });
+      // Find or create user in our database
+      let user = await storage.getUserByFirebaseId(firebaseUid);
       
-      // Generate JWT token
-      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-      
-      // Return user data (without password) and token
-      res.status(201).json({
-        user: {
-          id: user.id,
-          email: user.email
-        },
-        token
-      });
-    } catch (error) {
-      console.error('Registration error:', error);
-      res.status(400).json({ message: 'Invalid registration data' });
-    }
-  });
-  
-  api.post('/auth/login', async (req: Request, res: Response) => {
-    try {
-      const { email, password } = req.body;
-      
-      // Find user by email
-      const user = await storage.getUserByEmail(email);
       if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials' });
+        // Create a new user record in our database
+        user = await storage.createUser({
+          email,
+          firebaseId: firebaseUid
+        });
       }
       
-      // Check password
-      const passwordMatch = await bcrypt.compare(password, user.password);
-      if (!passwordMatch) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-      }
-      
-      // Generate JWT token
-      const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-      
-      // Return user data (without password) and token
+      // Return user data and the verified token
       res.json({
         user: {
           id: user.id,
           email: user.email
         },
-        token
+        token: idToken
       });
     } catch (error) {
-      console.error('Login error:', error);
-      res.status(400).json({ message: 'Invalid login data' });
+      console.error('Token verification error:', error);
+      res.status(401).json({ message: 'Invalid or expired token' });
     }
   });
   
   // Middleware to verify JWT
-  const authenticateJWT = (req: Request, res: Response, next: Function) => {
+  const authenticateJWT = async (req: Request, res: Response, next: Function) => {
     const authHeader = req.headers.authorization;
     
     if (!authHeader) {
@@ -646,10 +624,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const token = authHeader.split(' ')[1];
     
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-      req.body.userId = decoded.userId; // Attach user ID to request
+      // Verify the Firebase token
+      const decodedToken = await auth.verifyIdToken(token);
+      const uid = decodedToken.uid;
+      
+      // Get or create the user in our database
+      let user = await storage.getUserByFirebaseId(uid);
+      
+      if (!user) {
+        // If the user doesn't exist in our database but has a valid Firebase token,
+        // we should create a user record in our database
+        const email = decodedToken.email || '';
+        user = await storage.createUser({
+          email,
+          firebaseId: uid
+        });
+      }
+      
+      req.body.userId = user.id; // Attach user ID to request
       next();
     } catch (error) {
+      console.error('Authentication error:', error);
       return res.status(403).json({ message: 'Invalid or expired token' });
     }
   };

@@ -1,4 +1,10 @@
 import { apiRequest } from "./queryClient";
+import { auth } from "./firebase";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signOut
+} from "firebase/auth";
 
 // Types
 export interface User {
@@ -50,23 +56,45 @@ export function clearAuth(): void {
   localStorage.removeItem(USER_KEY);
 }
 
-// Login
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  const response = await apiRequest("POST", "/api/auth/login", { email, password });
+// Verify Firebase token with our backend
+async function verifyToken(idToken: string): Promise<AuthResponse> {
+  const response = await apiRequest("POST", "/api/auth/verify-token", { idToken });
   const data = await response.json();
   setAuth(data);
   return data;
 }
 
-// Register
+// Login with Firebase
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  // Sign in with Firebase
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  
+  // Get the Firebase ID token
+  const idToken = await userCredential.user.getIdToken();
+  
+  // Verify token with our backend
+  return await verifyToken(idToken);
+}
+
+// Register with Firebase
 export async function register(email: string, password: string): Promise<AuthResponse> {
-  const response = await apiRequest("POST", "/api/auth/register", { email, password });
-  const data = await response.json();
-  setAuth(data);
-  return data;
+  // Create user with Firebase
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  
+  // Get the Firebase ID token
+  const idToken = await userCredential.user.getIdToken();
+  
+  // Verify token with our backend
+  return await verifyToken(idToken);
 }
 
 // Logout
-export function logout(): void {
-  clearAuth();
+export async function logout(): Promise<void> {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error("Error signing out with Firebase:", error);
+  } finally {
+    clearAuth();
+  }
 }

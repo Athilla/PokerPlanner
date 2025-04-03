@@ -11,6 +11,7 @@ export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByFirebaseId(firebaseId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
 
   // Sessions
@@ -73,10 +74,21 @@ export class MemStorage implements IStorage {
       (user) => user.email.toLowerCase() === email.toLowerCase()
     );
   }
+  
+  async getUserByFirebaseId(firebaseId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.firebaseId === firebaseId
+    );
+  }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.userIdCounter++;
-    const user: User = { ...insertUser, id };
+    const user: User = { 
+      id, 
+      email: insertUser.email,
+      password: insertUser.password ?? null,
+      firebaseId: insertUser.firebaseId ?? null
+    };
     this.users.set(id, user);
     return user;
   }
@@ -95,7 +107,14 @@ export class MemStorage implements IStorage {
   async createSession(insertSession: InsertSession): Promise<Session> {
     const id = uuidv4();
     const createdAt = new Date();
-    const session: Session = { ...insertSession, id, createdAt };
+    const session: Session = { 
+      id,
+      name: insertSession.name,
+      hostId: insertSession.hostId,
+      scale: insertSession.scale,
+      createdAt,
+      notificationsEnabled: insertSession.notificationsEnabled ?? false
+    };
     this.sessions.set(id, session);
     return session;
   }
@@ -146,11 +165,14 @@ export class MemStorage implements IStorage {
   async createUserStory(insertUserStory: InsertUserStory): Promise<UserStory> {
     const id = this.userStoryIdCounter++;
     const userStory: UserStory = { 
-      ...insertUserStory, 
-      id, 
-      finalEstimate: null, 
-      isActive: false, 
-      isCompleted: false 
+      id,
+      sessionId: insertUserStory.sessionId,
+      title: insertUserStory.title,
+      description: insertUserStory.description ?? null,
+      order: insertUserStory.order,
+      finalEstimate: null,
+      isActive: false,
+      isCompleted: false
     };
     this.userStories.set(id, userStory);
     return userStory;
@@ -255,7 +277,9 @@ export class MemStorage implements IStorage {
   async clearVotesForUserStory(userStoryId: number): Promise<boolean> {
     let deleted = false;
     
-    for (const [key, vote] of this.votes.entries()) {
+    // Use Array.from to avoid iterator issues
+    const entries = Array.from(this.votes.entries());
+    for (const [key, vote] of entries) {
       if (vote.userStoryId === userStoryId) {
         this.votes.delete(key);
         deleted = true;

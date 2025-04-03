@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { User, getUser, getToken, setAuth, clearAuth, login, register, logout, isAuthenticated } from "@/lib/auth";
 import { useLocation } from "wouter";
+import { useFirebaseAuth, AuthUser } from "@/hooks/useFirebaseAuth";
+
+// Legacy import for type compatibility
+import type { User } from "@/lib/auth";
 
 interface AuthContextType {
   currentUser: User | null;
@@ -14,58 +17,66 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper function to convert Firebase user to our app User type
+const convertToAppUser = (firebaseUser: AuthUser | null): User | null => {
+  if (!firebaseUser) return null;
+  
+  return {
+    id: parseInt(firebaseUser.uid) || 0, // Using UID as ID - note this is a string in Firebase
+    email: firebaseUser.email || "",
+  };
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { 
+    user: firebaseUser, 
+    loading, 
+    login: firebaseLogin, 
+    register: firebaseRegister, 
+    logout: firebaseLogout
+  } = useFirebaseAuth();
+  
   const [, navigate] = useLocation();
 
-  // Initialize auth state from localStorage
-  useEffect(() => {
-    const storedUser = getUser();
-    const storedToken = getToken();
-
-    setCurrentUser(storedUser);
-    setToken(storedToken);
-    setIsLoading(false);
-  }, []);
+  // Convert Firebase user to our app User type
+  const currentUser = convertToAppUser(firebaseUser);
+  const token = firebaseUser?.idToken || null;
+  const isAuthenticated = !!firebaseUser;
 
   const handleLogin = async (email: string, password: string) => {
-    setIsLoading(true);
     try {
-      const response = await login(email, password);
-      setCurrentUser(response.user);
-      setToken(response.token);
+      await firebaseLogin(email, password);
       navigate("/dashboard");
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      console.error("Login error:", error);
+      throw error;
     }
   };
 
   const handleRegister = async (email: string, password: string) => {
-    setIsLoading(true);
     try {
-      const response = await register(email, password);
-      setCurrentUser(response.user);
-      setToken(response.token);
+      await firebaseRegister(email, password);
       navigate("/dashboard");
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      console.error("Register error:", error);
+      throw error;
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    setCurrentUser(null);
-    setToken(null);
-    navigate("/");
+  const handleLogout = async () => {
+    try {
+      await firebaseLogout();
+      navigate("/");
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
   const value = {
     currentUser,
     token,
-    isLoading,
-    isAuthenticated: isAuthenticated(),
+    isLoading: loading,
+    isAuthenticated,
     login: handleLogin,
     register: handleRegister,
     logout: handleLogout,

@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { getToken } from "./auth";
+import { auth } from "./firebase";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -8,13 +8,29 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+// Helper function to get Firebase token
+async function getFirebaseToken(): Promise<string | null> {
+  try {
+    // First try to get a token from the current Firebase user
+    if (auth.currentUser) {
+      return await auth.currentUser.getIdToken(true);
+    }
+    
+    // If no current user, try to use the token from localStorage
+    return localStorage.getItem("planning_poker_token");
+  } catch (error) {
+    console.error("Error getting Firebase token:", error);
+    return null;
+  }
+}
+
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  // Get auth token if available
-  const token = getToken();
+  // Get auth token if available from Firebase
+  const token = await getFirebaseToken();
   
   // Setup headers
   const headers: Record<string, string> = {};
@@ -42,8 +58,8 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    // Get auth token if available
-    const token = getToken();
+    // Get auth token if available from Firebase
+    const token = await getFirebaseToken();
     
     // Setup headers
     const headers: Record<string, string> = {};
