@@ -331,6 +331,11 @@ export default function SessionRoom() {
       <div className="flex-grow p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2">
+          {console.log("Debug SessionRoom - userStories:", userStories)}
+          {console.log("Debug SessionRoom - activeStory:", activeStory)}
+          {console.log("Debug SessionRoom - activeStoryIndex:", activeStoryIndex)}
+          
+          {/* Option 1: Using activeStory */}
           {activeStory ? (
             <>
               <UserStoryItem
@@ -362,12 +367,95 @@ export default function SessionRoom() {
                 />
               )}
             </>
+          ) : /* Option 2: Try to find an active story in userStories if activeStory is not set properly */
+          userStories.length > 0 && userStories.find(story => story.isActive) ? (
+            /* Found an active story in userStories */
+            (() => {
+              const fallbackActiveStory = userStories.find(story => story.isActive)!;
+              const fallbackActiveStoryIndex = userStories.findIndex(story => story.id === fallbackActiveStory.id);
+              console.log("Found fallback active story:", fallbackActiveStory);
+              
+              return (
+                <>
+                  <UserStoryItem
+                    sessionId={sessionId || ""}
+                    userStory={fallbackActiveStory}
+                    currentIndex={fallbackActiveStoryIndex}
+                    totalStories={userStories.length}
+                    isHost={isHost}
+                    votesRevealed={votesRevealed}
+                    estimatedValue={finalEstimate || undefined}
+                    onReveal={handleRevealVotes}
+                  />
+                  
+                  {votesRevealed ? (
+                    <VoteResults
+                      votes={votes.filter(v => v.userStoryId === fallbackActiveStory.id)}
+                      participants={participants}
+                      finalEstimate={finalEstimate}
+                    />
+                  ) : (
+                    <VotingArea
+                      sessionId={sessionId || ""}
+                      userStoryId={fallbackActiveStory.id}
+                      votingScale={votingScale}
+                      userVote={userVote}
+                      isParticipant={!isHost}
+                      onVoteSelect={handleVoteSelect}
+                      disabled={isHost}
+                    />
+                  )}
+                </>
+              );
+            })()
+          ) : /* Option 3: If there are any stories but none are active, just show the first one */
+          userStories.length > 0 ? (
+            /* Show the first story as fallback */
+            (() => {
+              const fallbackStory = userStories[0];
+              console.log("Using first story as fallback:", fallbackStory);
+              
+              return (
+                <>
+                  <UserStoryItem
+                    sessionId={sessionId || ""}
+                    userStory={fallbackStory}
+                    currentIndex={0}
+                    totalStories={userStories.length}
+                    isHost={isHost}
+                    votesRevealed={votesRevealed}
+                    estimatedValue={finalEstimate || undefined}
+                    onReveal={handleRevealVotes}
+                  />
+                  
+                  {votesRevealed ? (
+                    <VoteResults
+                      votes={votes.filter(v => v.userStoryId === fallbackStory.id)}
+                      participants={participants}
+                      finalEstimate={finalEstimate}
+                    />
+                  ) : (
+                    <VotingArea
+                      sessionId={sessionId || ""}
+                      userStoryId={fallbackStory.id}
+                      votingScale={votingScale}
+                      userVote={userVote}
+                      isParticipant={!isHost}
+                      onVoteSelect={handleVoteSelect}
+                      disabled={isHost}
+                    />
+                  )}
+                </>
+              );
+            })()
           ) : completedStories.length > 0 ? (
+            /* All stories completed */
             <div className="bg-white rounded-lg shadow-card p-6 mb-6 text-center">
               <h2 className="text-lg font-medium mb-2">{t("session.allStoriesCompleted")}</h2>
               <p className="text-muted-foreground mb-4">{t("session.allStoriesCompletedMessage")}</p>
             </div>
           ) : (
+            /* No stories at all */
             <div className="bg-white rounded-lg shadow-card p-6 mb-6 text-center">
               <h2 className="text-lg font-medium mb-2">{t("session.noActiveStory")}</h2>
               <p className="text-muted-foreground">{t("session.waitingForHost")}</p>
