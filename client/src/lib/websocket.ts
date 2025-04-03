@@ -14,26 +14,37 @@ let reconnectTimeout: number | null = null;
 
 // Create a new WebSocket connection
 export function createWebSocketConnection(): WebSocket {
+  console.log("Creating new WebSocket connection");
+  
   // Clear any existing reconnect timers
   if (reconnectTimeout) {
     window.clearTimeout(reconnectTimeout);
     reconnectTimeout = null;
   }
 
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    return socket;
-  }
-
-  // Close existing socket if it's in a closing or connecting state
-  if (socket && (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CONNECTING)) {
-    socket.onclose = null; // Remove close handler to prevent reconnection
-    socket.onerror = null; // Prevent error handler
-    socket.close();
+  // If socket exists, check its state
+  if (socket) {
+    // If socket is already open, just return it
+    if (socket.readyState === WebSocket.OPEN) {
+      console.log("Existing WebSocket connection is already open");
+      return socket;
+    }
+    
+    // Force close the existing socket regardless of state
+    console.log(`Closing existing socket with readyState: ${socket.readyState}`);
+    socket.onclose = null; // Remove close handler to prevent auto-reconnection
+    socket.onerror = null; // Prevent error handler from firing
+    try {
+      socket.close();
+    } catch (e) {
+      console.log("Error closing socket:", e);
+    }
   }
 
   // Create WebSocket connection to the server
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws`;
+  console.log(`Connecting to WebSocket at ${wsUrl}`);
   socket = new WebSocket(wsUrl);
 
   // Handle connection open
@@ -46,18 +57,14 @@ export function createWebSocketConnection(): WebSocket {
   socket.onclose = (event) => {
     console.log("WebSocket connection closed", event.code, event.reason);
     
-    // Only try to reconnect if we haven't exceeded maximum attempts and it wasn't a clean close
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && event.code !== 1000) {
-      const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
-      console.log(`Attempting to reconnect in ${delay}ms...`);
-      
-      reconnectTimeout = window.setTimeout(() => {
-        reconnectAttempts++;
-        createWebSocketConnection();
-      }, delay);
-    } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      console.error("Maximum reconnection attempts reached");
-    }
+    // Always try to reconnect - no maximum attempts limit
+    const delay = RECONNECT_DELAY;
+    console.log(`Attempting to reconnect in ${delay}ms...`);
+    
+    reconnectTimeout = window.setTimeout(() => {
+      reconnectAttempts++;
+      createWebSocketConnection();
+    }, delay);
     
     socket = null;
   };
@@ -72,10 +79,25 @@ export function createWebSocketConnection(): WebSocket {
 
 // Get the existing WebSocket connection or create a new one
 export function getWebSocket(): WebSocket {
-  if (!socket || (socket.readyState !== WebSocket.OPEN && socket.readyState !== WebSocket.CONNECTING)) {
+  if (!socket) {
+    console.log("No existing WebSocket, creating new connection");
     return createWebSocketConnection();
   }
-  return socket;
+  
+  // Check if the socket is in a usable state
+  if (socket.readyState === WebSocket.OPEN) {
+    console.log("Using existing open WebSocket connection");
+    return socket;
+  }
+  
+  if (socket.readyState === WebSocket.CONNECTING) {
+    console.log("WebSocket is connecting, using existing connection");
+    return socket;
+  }
+  
+  // Socket is closing or closed - create a new one
+  console.log(`WebSocket is in unusable state (${socket.readyState}), creating new connection`);
+  return createWebSocketConnection();
 }
 
 // Close the WebSocket connection
