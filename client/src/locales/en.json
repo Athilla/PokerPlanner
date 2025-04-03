@@ -111,6 +111,8 @@
     "deletedMessage": "Session has been deleted successfully",
     "deleteError": "Failed to delete session",
     "sessionDeleted": "This session has been deleted by the host",
+    "hostDisconnected": "The host has disconnected from the session",
+    "hostReconnected": "The host has reconnected to the session",
     "unknownError": "An unknown error occurred",
     "you": "You"
   }

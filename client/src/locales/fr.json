@@ -111,6 +111,8 @@
     "deletedMessage": "La session a été supprimée avec succès",
     "deleteError": "Échec de la suppression de la session",
     "sessionDeleted": "Cette session a été supprimée par l'hôte",
+    "hostDisconnected": "L'hôte s'est déconnecté de la session",
+    "hostReconnected": "L'hôte s'est reconnecté à la session",
     "unknownError": "Une erreur inconnue s'est produite",
     "you": "Vous"
   }

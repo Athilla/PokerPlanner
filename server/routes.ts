@@ -316,9 +316,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notificationsEnabled: session.notificationsEnabled
       });
       
-      // Broadcast host connected
+      // Broadcast host reconnected if there are other clients in the session
       broadcastToSession(sessionId, {
-        type: 'host_connected'
+        type: 'host_reconnected'
       }, [client.ws]);
     } catch (error) {
       console.error('Error handling host join session:', error);

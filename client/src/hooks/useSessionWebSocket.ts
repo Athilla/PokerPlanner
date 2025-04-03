@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useWebSocket } from "@/context/WebSocketContext";
 import { safeJSONParse } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 interface UseSessionWebSocketParams {
   sessionId: string | undefined;
@@ -37,6 +38,7 @@ export default function useSessionWebSocket({
   const { t } = useTranslation();
   const { addMessageListener, removeMessageListener } = useWebSocket();
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!sessionId) return;
@@ -105,6 +107,20 @@ export default function useSessionWebSocket({
       if (data.completedStoryVotes) {
         setCompletedVotes(data.completedStoryVotes);
       }
+      
+      // Handle active story votes if present
+      if (activeStory && data.activeStoryVotes && data.activeStoryVotes.length > 0) {
+        setVotes(data.activeStoryVotes);
+        setVotesRevealed(data.votesRevealed || false);
+        
+        // If votes are revealed, calculate final estimate
+        if (data.votesRevealed) {
+          const voteValues = data.activeStoryVotes.map((v: any) => v.value);
+          // Use the server-calculated estimate if available or the active story's finalEstimate
+          const estimate = data.finalEstimate || activeStory.finalEstimate || null;
+          setFinalEstimate(estimate);
+        }
+      }
     };
     
     // Handler for participant joined event
@@ -132,6 +148,22 @@ export default function useSessionWebSocket({
       setParticipants(prev => 
         prev.map(p => p.id === data.participantId ? { ...p, isConnected: false } : p)
       );
+    };
+    
+    // Handler for host disconnected event
+    const handleHostDisconnected = () => {
+      // Notify the participant that the host has disconnected
+      setSessionError(t("session.hostDisconnected"));
+    };
+    
+    // Handler for host reconnected event
+    const handleHostReconnected = () => {
+      // Clear any host disconnection error and notify that the host is back
+      setSessionError(null);
+      toast({
+        title: t("common.success"),
+        description: t("session.hostReconnected")
+      });
     };
     
     // Handler for participant voted event
@@ -287,6 +319,8 @@ export default function useSessionWebSocket({
     }
     addMessageListener("participant_joined", handleParticipantJoined);
     addMessageListener("participant_disconnected", handleParticipantDisconnected);
+    addMessageListener("host_disconnected", handleHostDisconnected);
+    addMessageListener("host_reconnected", handleHostReconnected);
     addMessageListener("participant_voted", handleParticipantVoted);
     addMessageListener("votes_revealed", handleVotesRevealed);
     addMessageListener("voting_restarted", handleVotingRestarted);
@@ -305,6 +339,8 @@ export default function useSessionWebSocket({
       }
       removeMessageListener("participant_joined", handleParticipantJoined);
       removeMessageListener("participant_disconnected", handleParticipantDisconnected);
+      removeMessageListener("host_disconnected", handleHostDisconnected);
+      removeMessageListener("host_reconnected", handleHostReconnected);
       removeMessageListener("participant_voted", handleParticipantVoted);
       removeMessageListener("votes_revealed", handleVotesRevealed);
       removeMessageListener("voting_restarted", handleVotingRestarted);
