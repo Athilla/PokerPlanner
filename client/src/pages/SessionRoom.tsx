@@ -92,36 +92,41 @@ export default function SessionRoom() {
       return;
     }
     
-    if (isHost) {
-      if (currentUser && token) {
-        // Join as host and save host status
-        hostJoinSession(sessionId, currentUser.id, token);
-        localStorage.setItem(`host_status_${sessionId}`, "true");
-      } else if (storedIsHost) {
-        // Reconnect with stored host status after refresh
-        const userId = localStorage.getItem(`host_userId_${sessionId}`);
-        const storedToken = localStorage.getItem(`host_token_${sessionId}`);
-        
-        if (userId && storedToken) {
-          // Use stored credentials
-          hostJoinSession(sessionId, parseInt(userId, 10), storedToken);
-        } else {
-          // Try to use current session
-          hostJoinSession(sessionId, 1, "mock-token-1234");
+    // Wait a moment to ensure WebSocket is connecting or ready
+    setTimeout(() => {
+      if (isHost) {
+        if (currentUser && token) {
+          console.log("Joining as authenticated host");
+          // Join as host and save host status
+          hostJoinSession(sessionId, currentUser.id, token);
+          localStorage.setItem(`host_status_${sessionId}`, "true");
+          localStorage.setItem(`host_userId_${sessionId}`, currentUser.id.toString());
+          localStorage.setItem(`host_token_${sessionId}`, token);
+        } else if (storedIsHost) {
+          console.log("Reconnecting as stored host");
+          // Reconnect with stored host status after refresh
+          const userId = localStorage.getItem(`host_userId_${sessionId}`);
+          const storedToken = localStorage.getItem(`host_token_${sessionId}`);
+          
+          if (userId && storedToken) {
+            // Use stored credentials
+            console.log("Using stored credentials for host reconnection");
+            hostJoinSession(sessionId, parseInt(userId, 10), storedToken);
+          } else {
+            // Try to use mock token as a fallback
+            console.log("Using fallback mock token for host reconnection");
+            hostJoinSession(sessionId, 1, "mock-token-1234");
+          }
         }
+      } else if (participantId && storedSessionId === sessionId) {
+        // Already joined as participant
+        console.log("Already joined as participant, no need to rejoin");
+      } else {
+        // Redirect to join page
+        console.log("Not host or participant, redirecting to join page");
+        navigate(`/join/${sessionId}`);
       }
-    } else if (participantId && storedSessionId === sessionId) {
-      // Already joined as participant
-    } else {
-      // Redirect to join page
-      navigate(`/join/${sessionId}`);
-    }
-    
-    // Save host data if authenticated
-    if (isAuthenticated && currentUser && token) {
-      localStorage.setItem(`host_userId_${sessionId}`, currentUser.id.toString());
-      localStorage.setItem(`host_token_${sessionId}`, token);
-    }
+    }, 300); // Small delay to ensure WebSocket is connecting
     
     // Cleanup
     return () => {

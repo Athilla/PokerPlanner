@@ -25,7 +25,28 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     // Handle connection open
     socket.onopen = () => {
+      console.log("WebSocket connection opened in context");
       setConnected(true);
+      
+      // Send any pending messages that were queued during disconnection
+      if (window.pendingMessages && window.pendingMessages.length > 0) {
+        console.log(`Sending ${window.pendingMessages.length} pending messages`);
+        const messagesToSend = [...window.pendingMessages];
+        window.pendingMessages = [];
+        
+        // Send each message with a small delay to ensure proper order
+        messagesToSend.forEach((message, index) => {
+          setTimeout(() => {
+            console.log(`Sending pending message: ${message.type}`);
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({
+                type: message.type,
+                ...message.data
+              }));
+            }
+          }, index * 100);
+        });
+      }
     };
 
     // Handle connection close
