@@ -6,6 +6,9 @@ import {
   signOut
 } from "firebase/auth";
 
+// Development mode flag (should match the one in useFirebaseAuth)
+const DEV_MODE = true; // Set to false in production
+
 // Types
 export interface User {
   id: number;
@@ -64,8 +67,28 @@ async function verifyToken(idToken: string): Promise<AuthResponse> {
   return data;
 }
 
+// Create dev mode auth response
+function createDevModeAuth(email: string): AuthResponse {
+  const mockUser: User = {
+    id: 123, // Fixed ID for development
+    email
+  };
+  const mockToken = 'dev-token-' + Date.now();
+  const authResponse: AuthResponse = {
+    user: mockUser,
+    token: mockToken
+  };
+  setAuth(authResponse);
+  return authResponse;
+}
+
 // Login with Firebase
 export async function login(email: string, password: string): Promise<AuthResponse> {
+  if (DEV_MODE) {
+    console.log('DEV MODE: Using mock login');
+    return createDevModeAuth(email);
+  }
+  
   // Sign in with Firebase
   const userCredential = await signInWithEmailAndPassword(auth, email, password);
   
@@ -78,6 +101,11 @@ export async function login(email: string, password: string): Promise<AuthRespon
 
 // Register with Firebase
 export async function register(email: string, password: string): Promise<AuthResponse> {
+  if (DEV_MODE) {
+    console.log('DEV MODE: Using mock register');
+    return createDevModeAuth(email);
+  }
+  
   // Create user with Firebase
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   
@@ -90,6 +118,12 @@ export async function register(email: string, password: string): Promise<AuthRes
 
 // Logout
 export async function logout(): Promise<void> {
+  if (DEV_MODE) {
+    console.log('DEV MODE: Using mock logout');
+    clearAuth();
+    return;
+  }
+  
   try {
     await signOut(auth);
   } catch (error) {

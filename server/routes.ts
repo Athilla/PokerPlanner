@@ -196,23 +196,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { sessionId, userId, token } = data;
       
-      // Verify Firebase token
+      // Verify token (Firebase or Development)
       try {
         if (!token) {
           throw new Error('No token provided');
         }
         
-        const decodedToken = await auth.verifyIdToken(token);
-        const firebaseUid = decodedToken.uid;
-        
-        // Get the user from our database
-        const user = await storage.getUserByFirebaseId(firebaseUid);
-        
-        if (!user || user.id !== userId) {
-          throw new Error('Invalid token or user ID mismatch');
+        // Check if this is a development token
+        if (DEV_MODE && (token.startsWith('mock-token-') || token.startsWith('mock-id-token-') || token.startsWith('dev-token-'))) {
+          console.log('DEV MODE: Host joining session with development token');
+          
+          // Find the dev user (should have been created during verify-token)
+          const user = await storage.getUserByFirebaseId('dev-firebase-id');
+          
+          if (!user) {
+            console.log('DEV MODE: No dev user found, creating one');
+            await storage.createUser({
+              email: 'dev@example.com',
+              firebaseId: 'dev-firebase-id'
+            });
+          }
+          
+          // In dev mode, we accept any userId as valid
+          console.log('DEV MODE: Skipping user ID verification');
+        } else {
+          // Regular Firebase token verification
+          const decodedToken = await auth.verifyIdToken(token);
+          const firebaseUid = decodedToken.uid;
+          
+          // Get the user from our database
+          const user = await storage.getUserByFirebaseId(firebaseUid);
+          
+          if (!user || user.id !== userId) {
+            throw new Error('Invalid token or user ID mismatch');
+          }
         }
       } catch (error) {
-        console.error('Firebase auth error:', error);
+        console.error('Authentication error:', error);
         return sendToClient(client, {
           type: 'error',
           message: 'Authentication failed'
@@ -574,6 +594,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const api = express.Router();
   app.use('/api', api);
   
+  // Development mode flag
+  const DEV_MODE = true; // Set to false in production
+  
   // Firebase Auth routes
   api.post('/auth/verify-token', async (req: Request, res: Response) => {
     try {
@@ -583,7 +606,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'No token provided' });
       }
       
-      // Verify Firebase token
+      // Check if this is a development token
+      if (DEV_MODE && (idToken.startsWith('mock-token-') || idToken.startsWith('mock-id-token-'))) {
+        console.log('DEV MODE: Processing development token');
+        
+        // Extract email from token or use a default
+        const email = req.body.email || 'dev@example.com';
+        
+        // Find or create dev user
+        let user = await storage.getUserByEmail(email);
+        
+        if (!user) {
+          console.log('DEV MODE: Creating development user');
+          user = await storage.createUser({
+            email,
+            firebaseId: 'dev-firebase-id'
+          });
+        }
+        
+        // Return user data and the dev token
+        return res.json({
+          user: {
+            id: user.id,
+            email: user.email
+          },
+          token: idToken
+        });
+      }
+      
+      // Regular Firebase token verification
       const decodedToken = await auth.verifyIdToken(idToken);
       const firebaseUid = decodedToken.uid;
       const email = decodedToken.email || '';
@@ -624,7 +675,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const token = authHeader.split(' ')[1];
     
     try {
-      // Verify the Firebase token
+      // Check if this is a development token
+      if (DEV_MODE && (token.startsWith('mock-token-') || token.startsWith('mock-id-token-') || token.startsWith('dev-token-'))) {
+        console.log('DEV MODE: Authenticating with development token');
+        
+        // Find the dev user (should have been created during verify-token)
+        const user = await storage.getUserByFirebaseId('dev-firebase-id');
+        
+        if (user) {
+          req.body.userId = user.id; // Attach user ID to request
+          return next();
+        } else {
+          // If no dev user exists, create one
+          console.log('DEV MODE: Creating development user for authentication');
+          const newUser = await storage.createUser({
+            email: 'dev@example.com',
+            firebaseId: 'dev-firebase-id'
+          });
+          
+          req.body.userId = newUser.id;
+          return next();
+        }
+      }
+      
+      // Regular Firebase token verification
       const decodedToken = await auth.verifyIdToken(token);
       const uid = decodedToken.uid;
       
