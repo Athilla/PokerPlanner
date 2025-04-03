@@ -158,9 +158,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { sessionId, participantId } = data;
       
+      console.log(`Handling join session for participantId: ${participantId} in sessionId: ${sessionId}`);
+      
       // Validate session exists
       const session = await storage.getSession(sessionId);
       if (!session) {
+        console.log(`Session not found: ${sessionId}`);
         return sendToClient(client, {
           type: 'error',
           message: 'Session not found'
@@ -174,6 +177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get participant details
       const participant = await storage.getParticipant(participantId);
       if (!participant) {
+        console.log(`Participant not found: ${participantId}`);
         return sendToClient(client, {
           type: 'error',
           message: 'Participant not found'
@@ -185,17 +189,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get session data
       const userStories = await storage.getUserStories(sessionId);
+      console.log(`Retrieved ${userStories.length} user stories for session ${sessionId}`);
+      
       const participants = await storage.getSessionParticipants(sessionId);
       const activeStory = userStories.find(story => story.isActive);
+      
+      if (activeStory) {
+        console.log(`Active story for session ${sessionId}: ID ${activeStory.id}, Title: ${activeStory.title}`);
+      } else {
+        console.log(`No active story found for session ${sessionId}`);
+      }
       
       // Get votes if there's an active story
       let votes: Vote[] = [];
       if (activeStory) {
         votes = await storage.getVotesByUserStory(activeStory.id);
+        console.log(`Retrieved ${votes.length} votes for active story ${activeStory.id}`);
       }
       
       // Get scale
       const scale = session.scale ? JSON.parse(session.scale) : generateFibonacciScale();
+      
+      console.log(`Sending session_joined event with ${userStories.length} stories to participant ${participantId}`);
       
       // Send session data to the client
       sendToClient(client, {
@@ -322,6 +337,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get scale
       const scale = session.scale ? JSON.parse(session.scale) : generateFibonacciScale();
+      
+      // Log what we're sending to help with debugging
+      console.log(`Sending host_session_joined data to client. Session ID: ${sessionId}, Stories count: ${userStories.length}, Active story: ${activeStory?.id || 'none'}`);
       
       // Send session data to the client
       sendToClient(client, {

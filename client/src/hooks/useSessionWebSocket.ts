@@ -117,16 +117,27 @@ export default function useSessionWebSocket({
     
     // Handler for host session joined event
     const handleHostSessionJoined = (data: any) => {
+      console.log("Host session joined event received:", data);
+      if (!data || !data.session) {
+        console.error("Invalid host_session_joined data", data);
+        return;
+      }
+      
       setSession(data.session);
+      
+      // Check and log user stories
+      console.log("User stories received:", data.userStories);
       setUserStories(data.userStories || []);
       setParticipants(data.participants || []);
       
       // Find active story
-      const activeStory = data.activeStory || data.userStories?.find((s: any) => s.isActive);
+      const activeStory = data.activeStory || (data.userStories && data.userStories.find((s: any) => s.isActive));
+      console.log("Active story determined:", activeStory);
       setActiveStory(activeStory || null);
       
       // Set completed stories
       const completed = data.userStories?.filter((s: any) => s.isCompleted) || [];
+      console.log("Completed stories:", completed);
       setCompletedStories(completed);
       
       // Set voting scale
