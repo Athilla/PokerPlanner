@@ -142,7 +142,7 @@ export class DatabaseStorage implements IStorage {
         .delete(sessions)
         .where(eq(sessions.id, id));
       
-      return result.count > 0;
+      return true; // If no error occurred, consider it successful
     } catch (error) {
       console.error("Error deleting session:", error);
       return false;
@@ -340,10 +340,10 @@ export class DatabaseStorage implements IStorage {
 
   async clearVotesForUserStory(userStoryId: number): Promise<boolean> {
     try {
-      const result = await db
+      await db
         .delete(votes)
         .where(eq(votes.userStoryId, userStoryId));
-      return result.count > 0;
+      return true; // If no error occurred, consider it successful
     } catch (error) {
       console.error("Error clearing votes:", error);
       return false;

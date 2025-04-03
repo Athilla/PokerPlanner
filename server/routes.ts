@@ -112,12 +112,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Handle disconnections
     ws.on('close', async () => {
       const client = clients.get(ws);
-      if (client?.participantId) {
-        await storage.updateParticipantConnection(client.participantId, false);
-        broadcastToSession(client.sessionId!, {
-          type: 'participant_disconnected',
-          participantId: client.participantId
-        });
+      if (client?.sessionId) {
+        if (client.participantId) {
+          // Regular participant disconnection
+          await storage.updateParticipantConnection(client.participantId, false);
+          broadcastToSession(client.sessionId, {
+            type: 'participant_disconnected',
+            participantId: client.participantId
+          });
+        } else if (client.isHost) {
+          // Host disconnection
+          broadcastToSession(client.sessionId, {
+            type: 'host_disconnected',
+          });
+          console.log(`Host disconnected from session ${client.sessionId}`);
+        }
       }
       clients.delete(ws);
     });
@@ -271,10 +280,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const participants = await storage.getSessionParticipants(sessionId);
       const activeStory = userStories.find(story => story.isActive);
       
-      // Get all votes for completed stories
+      // Get all votes for the active story and completed stories
       const completedStoryVotes = new Map<number, any[]>();
+      
+      // Add votes for completed stories
       for (const story of userStories.filter(s => s.isCompleted)) {
         completedStoryVotes.set(story.id, await storage.getVotesByUserStory(story.id));
+      }
+      
+      // Add votes for active story if it exists
+      let activeStoryVotes: Vote[] = [];
+      if (activeStory) {
+        activeStoryVotes = await storage.getVotesByUserStory(activeStory.id);
+        
+        // If the active story has votes, add them to the map
+        if (activeStoryVotes.length > 0) {
+          completedStoryVotes.set(activeStory.id, activeStoryVotes);
+        }
       }
       
       // Get scale
@@ -288,6 +310,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         participants,
         activeStory,
         completedStoryVotes: Object.fromEntries(completedStoryVotes),
+        activeStoryVotes, // Include the active story votes directly
+        votesRevealed: activeStory && activeStoryVotes.length > 0, // Indicate if votes should be revealed
         scale,
         notificationsEnabled: session.notificationsEnabled
       });
