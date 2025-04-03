@@ -758,48 +758,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Middleware to verify JWT
   const authenticateJWT = async (req: Request, res: Response, next: Function) => {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader) {
-      return res.status(401).json({ message: 'Authentication required' });
-    }
-    
-    const token = authHeader.split(' ')[1];
-    
-    // Check if this is a development token
-    if (DEV_MODE && (token.startsWith('mock-token-') || token.startsWith('mock-id-token-') || token.startsWith('dev-token-'))) {
-      console.log('DEV MODE: Authenticating with development token');
-      
-      try {
-        // Find the dev user (should have been created during verify-token)
-        let user = await storage.getUserByFirebaseId('dev-firebase-id');
-        
-        if (!user) {
-          // If no dev user exists, create one
-          console.log('DEV MODE: Creating development user for authentication');
-          user = await storage.createUser({
-            email: 'dev@example.com',
-            firebaseId: 'dev-firebase-id'
-          });
-        }
-        
-        req.body.userId = user.id; // Attach user ID to request
-        return next(); // Important: return here to skip Firebase verification
-      } catch (error) {
-        console.error('DEV MODE authentication error:', error);
-        return res.status(500).json({ message: 'Development mode authentication error' });
-      }
-    }
-    
-    // Only get here if not in dev mode or not a dev token
+    // In development mode, always use a dev user without requiring authentication
     if (DEV_MODE) {
-      // If we're in dev mode and got here, the token might be invalid or malformed
-      // Let's be more permissive and try to continue with a default user
-      console.log('DEV MODE: Using fallback authentication - token was not recognized as a development token');
       try {
         // Try to get or create a default user
         let user = await storage.getUserByFirebaseId('dev-firebase-id');
         if (!user) {
+          console.log('DEV MODE: Creating development user');
           user = await storage.createUser({
             email: 'dev@example.com',
             firebaseId: 'dev-firebase-id'
@@ -808,11 +773,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         req.body.userId = user.id;
         return next();
-      } catch (fallbackError) {
-        console.error('DEV MODE fallback authentication error:', fallbackError);
-        return res.status(500).json({ message: 'Development fallback authentication failed' });
+      } catch (error) {
+        console.error('DEV MODE authentication error:', error);
+        return res.status(500).json({ message: 'Development mode authentication error' });
       }
     }
+    
+    // Only get here in production mode
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+    
+    const token = authHeader.split(' ')[1];
     
     // Production mode or explicitly trying to use Firebase auth in dev mode
     try {
