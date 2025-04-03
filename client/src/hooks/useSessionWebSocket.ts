@@ -82,16 +82,43 @@ export default function useSessionWebSocket({
 
     // Handler for session joined event (participant)
     const handleSessionJoined = (data: any) => {
+      console.log("Session joined event received:", data);
       setSession(data.session);
-      setUserStories(data.userStories || []);
+      
+      if (!data.userStories || data.userStories.length === 0) {
+        console.warn("No user stories received from server or empty array");
+      }
+      
+      // Force to use the correct type for userStories array
+      const typedUserStories: UserStory[] = Array.isArray(data.userStories) ? 
+        data.userStories.map((story: any) => ({
+          id: story.id,
+          title: story.title,
+          description: story.description,
+          sessionId: story.sessionId,
+          isActive: story.isActive,
+          isCompleted: story.isCompleted,
+          finalEstimate: story.finalEstimate,
+          order: story.order
+        })) : [];
+      
+      console.log("Typed user stories for participant:", typedUserStories);
+      setUserStories(typedUserStories);
       setParticipants(data.participants || []);
       
       // Find active story
-      const activeStory = data.activeStory || data.userStories?.find((s: any) => s.isActive);
+      let activeStory = data.activeStory;
+      if (!activeStory && typedUserStories.length > 0) {
+        activeStory = typedUserStories.find((s) => s.isActive === true);
+        console.log("Active story found in user stories for participant:", activeStory);
+      }
+      
+      console.log("Final active story determined for participant:", activeStory);
       setActiveStory(activeStory || null);
       
       // Set completed stories
-      const completed = data.userStories?.filter((s: any) => s.isCompleted) || [];
+      const completed = typedUserStories.filter((s) => s.isCompleted === true);
+      console.log("Completed stories for participant:", completed);
       setCompletedStories(completed);
       
       // Set voting scale
@@ -127,16 +154,40 @@ export default function useSessionWebSocket({
       
       // Check and log user stories
       console.log("User stories received:", data.userStories);
-      setUserStories(data.userStories || []);
+      
+      if (!data.userStories || data.userStories.length === 0) {
+        console.warn("No user stories received from server or empty array");
+      }
+      
+      // Force to use the correct type for userStories array
+      const typedUserStories: UserStory[] = Array.isArray(data.userStories) ? 
+        data.userStories.map((story: any) => ({
+          id: story.id,
+          title: story.title,
+          description: story.description,
+          sessionId: story.sessionId,
+          isActive: story.isActive,
+          isCompleted: story.isCompleted,
+          finalEstimate: story.finalEstimate,
+          order: story.order
+        })) : [];
+      
+      console.log("Typed user stories:", typedUserStories);
+      setUserStories(typedUserStories);
       setParticipants(data.participants || []);
       
-      // Find active story
-      const activeStory = data.activeStory || (data.userStories && data.userStories.find((s: any) => s.isActive));
-      console.log("Active story determined:", activeStory);
+      // Find active story - first check data.activeStory, then search in userStories
+      let activeStory = data.activeStory;
+      if (!activeStory && typedUserStories.length > 0) {
+        activeStory = typedUserStories.find((s) => s.isActive === true);
+        console.log("Active story found in user stories:", activeStory);
+      }
+      
+      console.log("Final active story determined:", activeStory);
       setActiveStory(activeStory || null);
       
       // Set completed stories
-      const completed = data.userStories?.filter((s: any) => s.isCompleted) || [];
+      const completed = typedUserStories.filter((s) => s.isCompleted === true);
       console.log("Completed stories:", completed);
       setCompletedStories(completed);
       
