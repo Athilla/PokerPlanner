@@ -8,18 +8,33 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-// Helper function to get Firebase token
+// Development mode flag (should match the one in auth.ts)
+const DEV_MODE = true; // Set to false in production
+
+// Helper function to get authentication token (Firebase or Development)
 async function getFirebaseToken(): Promise<string | null> {
   try {
-    // First try to get a token from the current Firebase user
+    // First check if development mode is enabled
+    if (DEV_MODE) {
+      // In development mode, we can just use the token from localStorage
+      const storedToken = localStorage.getItem("planning_poker_token");
+      if (storedToken && (storedToken.startsWith('mock-token-') || 
+          storedToken.startsWith('mock-id-token-') || 
+          storedToken.startsWith('dev-token-'))) {
+        console.log('DEV MODE: Using development token for API request');
+        return storedToken;
+      }
+    }
+    
+    // If not in dev mode or no dev token stored, try to get a token from Firebase
     if (auth.currentUser) {
       return await auth.currentUser.getIdToken(true);
     }
     
-    // If no current user, try to use the token from localStorage
+    // Last resort, try to use the token from localStorage
     return localStorage.getItem("planning_poker_token");
   } catch (error) {
-    console.error("Error getting Firebase token:", error);
+    console.error("Error getting token:", error);
     return null;
   }
 }
