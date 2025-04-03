@@ -10,7 +10,8 @@ import {
   insertUserStorySchema, 
   joinSessionSchema, 
   voteSchema,
-  Vote
+  Vote,
+  ParticipantRole
 } from "@shared/schema";
 import { auth } from "./firebase-admin";
 import { NextFunction } from "express";
@@ -882,7 +883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   api.post('/sessions/:id/join', async (req: Request, res: Response) => {
     try {
       // Validate join request
-      const { sessionId, alias } = joinSessionSchema.parse({
+      const { sessionId, alias, role } = joinSessionSchema.parse({
         ...req.body,
         sessionId: req.params.id
       });
@@ -893,17 +894,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Session not found' });
       }
       
+      // Verify role is allowed for this session
+      if (role === ParticipantRole.SPECTATOR && !session.allowSpectators) {
+        return res.status(403).json({ message: 'Spectators are not allowed in this session' });
+      }
+      
       // Check if alias is already used in this session
       const existingParticipant = await storage.getParticipantByAlias(sessionId, alias);
       if (existingParticipant) {
         if (existingParticipant.isConnected) {
           return res.status(409).json({ message: 'Alias already in use' });
         } else {
-          // If participant exists but is disconnected, update connection status
-          await storage.updateParticipantConnection(existingParticipant.id, true);
+          // If participant exists but is disconnected, update connection status and role
+          await storage.updateParticipant(existingParticipant.id, { 
+            isConnected: true,
+            role
+          });
+          
+          const updatedParticipant = await storage.getParticipant(existingParticipant.id);
           
           return res.json({
-            participant: existingParticipant,
+            participant: updatedParticipant,
             sessionId,
             sessionName: session.name
           });
@@ -913,7 +924,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create new participant
       const participant = await storage.createParticipant({
         sessionId,
-        alias
+        alias,
+        role
       });
       
       res.status(201).json({

@@ -30,6 +30,8 @@ export const sessions = pgTable("sessions", {
   scale: text("scale").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   notificationsEnabled: boolean("notifications_enabled").default(false),
+  hostCanVote: boolean("host_can_vote").default(false),
+  allowSpectators: boolean("allow_spectators").default(true),
 });
 
 export const insertSessionSchema = createInsertSchema(sessions).omit({
@@ -62,6 +64,13 @@ export const insertUserStorySchema = createInsertSchema(userStories).omit({
 export type InsertUserStory = z.infer<typeof insertUserStorySchema>;
 export type UserStory = typeof userStories.$inferSelect;
 
+// Enum for participant role
+export enum ParticipantRole {
+  VOTER = 'voter',
+  SPECTATOR = 'spectator',
+  HOST = 'host' // When host joins as a participant/voter
+}
+
 // Participants Table
 export const participants = pgTable("participants", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -69,6 +78,8 @@ export const participants = pgTable("participants", {
   alias: text("alias").notNull(),
   isConnected: boolean("is_connected").default(true),
   joinedAt: timestamp("joined_at").defaultNow(),
+  role: text("role").notNull().default(ParticipantRole.VOTER),
+  userId: integer("user_id").references(() => users.id), // For host as participant
 });
 
 export const insertParticipantSchema = createInsertSchema(participants).omit({
@@ -99,6 +110,7 @@ export type Vote = typeof votes.$inferSelect;
 export const joinSessionSchema = z.object({
   sessionId: z.string().uuid(),
   alias: z.string().min(1, { message: "Alias is required" }).max(50),
+  role: z.enum([ParticipantRole.VOTER, ParticipantRole.SPECTATOR]).default(ParticipantRole.VOTER),
 });
 
 // Validation schema for voting

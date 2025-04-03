@@ -4,7 +4,8 @@ import {
   sessions, Session, InsertSession,
   userStories, UserStory, InsertUserStory,
   participants, Participant, InsertParticipant,
-  votes, Vote, InsertVote
+  votes, Vote, InsertVote,
+  ParticipantRole
 } from "@shared/schema";
 
 export interface IStorage {
@@ -32,8 +33,10 @@ export interface IStorage {
   // Participants
   getParticipant(id: string): Promise<Participant | undefined>;
   getParticipantByAlias(sessionId: string, alias: string): Promise<Participant | undefined>;
+  getParticipantByUserId(sessionId: string, userId: number): Promise<Participant | undefined>;
   getSessionParticipants(sessionId: string): Promise<Participant[]>;
   createParticipant(participant: InsertParticipant): Promise<Participant>;
+  updateParticipant(id: string, updates: Partial<Participant>): Promise<Participant | undefined>;
   updateParticipantConnection(id: string, isConnected: boolean): Promise<Participant | undefined>;
 
   // Votes
@@ -113,7 +116,9 @@ export class MemStorage implements IStorage {
       hostId: insertSession.hostId,
       scale: insertSession.scale,
       createdAt,
-      notificationsEnabled: insertSession.notificationsEnabled ?? false
+      notificationsEnabled: insertSession.notificationsEnabled ?? false,
+      hostCanVote: insertSession.hostCanVote ?? false,
+      allowSpectators: insertSession.allowSpectators ?? true
     };
     this.sessions.set(id, session);
     return session;
@@ -216,6 +221,12 @@ export class MemStorage implements IStorage {
       p => p.sessionId === sessionId && p.alias.toLowerCase() === alias.toLowerCase()
     );
   }
+  
+  async getParticipantByUserId(sessionId: string, userId: number): Promise<Participant | undefined> {
+    return Array.from(this.participants.values()).find(
+      p => p.sessionId === sessionId && p.userId === userId
+    );
+  }
 
   async getSessionParticipants(sessionId: string): Promise<Participant[]> {
     return Array.from(this.participants.values())
@@ -226,8 +237,11 @@ export class MemStorage implements IStorage {
     const id = uuidv4();
     const joinedAt = new Date();
     const participant: Participant = { 
-      ...insertParticipant, 
-      id, 
+      id,
+      sessionId: insertParticipant.sessionId,
+      alias: insertParticipant.alias,
+      role: insertParticipant.role ?? ParticipantRole.VOTER,
+      userId: insertParticipant.userId ?? null,
       isConnected: true, 
       joinedAt 
     };
@@ -235,13 +249,17 @@ export class MemStorage implements IStorage {
     return participant;
   }
 
-  async updateParticipantConnection(id: string, isConnected: boolean): Promise<Participant | undefined> {
+  async updateParticipant(id: string, updates: Partial<Participant>): Promise<Participant | undefined> {
     const participant = await this.getParticipant(id);
     if (!participant) return undefined;
     
-    const updatedParticipant = { ...participant, isConnected };
+    const updatedParticipant = { ...participant, ...updates };
     this.participants.set(id, updatedParticipant);
     return updatedParticipant;
+  }
+  
+  async updateParticipantConnection(id: string, isConnected: boolean): Promise<Participant | undefined> {
+    return this.updateParticipant(id, { isConnected });
   }
 
   // ===== Vote Methods =====
